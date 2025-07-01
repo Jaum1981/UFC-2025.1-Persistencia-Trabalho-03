@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from database import movie_collection, director_collection
 from models import MovieCreate, MovieOut
-from typing import List
+from typing import List, Optional
 from bson import ObjectId
 
 router = APIRouter(prefix="/movies")
@@ -35,6 +35,10 @@ async def create_movie(movie: MovieCreate):
     movie_dict["_id"] = str(new_movie_id)
     return movie_dict
     
+@router.get("/count")
+async def get_movies_count():
+    count = await movie_collection.count_documents({})
+    return {"total_movies": count}
 
 @router.get("/", response_model=List[MovieOut])
 async def list_movies(skip: int = 0, limit: int = 10):
@@ -100,3 +104,36 @@ async def delete_movie(movie_id: str):
         return {"detail": "Movie deleted successfully"}
     else:
         raise HTTPException(status_code=404, detail="Movie not found")
+
+
+
+@router.get("/filter", response_model=List[MovieOut])
+async def filter_movies(
+    movie_title: Optional[str] = None,
+    genre: Optional[str] = None,
+    rating: Optional[str] = None,
+    release_year: Optional[int] = None,
+    director_id: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 10
+):
+    filter_query = {}
+    
+    if movie_title:
+        filter_query["movie_title"] = {"$regex": movie_title, "$options": "i"}
+    if genre:
+        filter_query["genre"] = {"$regex": genre, "$options": "i"}
+    if rating:
+        filter_query["rating"] = {"$regex": rating, "$options": "i"}
+    if release_year is not None:
+        filter_query["release_year"] = release_year
+    if director_id:
+        if ObjectId.is_valid(director_id):
+            filter_query["director_ids"] = {"$in": [director_id]}
+        else:
+            raise HTTPException(status_code=400, detail="Invalid director ID")
+    
+    movies = await movie_collection.find(filter_query).skip(skip).limit(limit).to_list(length=limit)
+    for m in movies:
+        m["_id"] = str(m["_id"])
+    return movies

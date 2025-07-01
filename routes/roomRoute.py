@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from database import room_collection, session_collection
 from models import RoomCreate, RoomOut
-from typing import List
+from typing import List, Optional
 from bson import ObjectId
 
 router = APIRouter(prefix="/rooms")
@@ -21,6 +21,10 @@ async def create_room(room: RoomCreate):
     created["_id"] = str(created["_id"])
     return created
     
+@router.get("/count")
+async def get_rooms_count():
+    count = await room_collection.count_documents({})
+    return {"total_rooms": count}
     
 @router.get("/", response_model=List[RoomOut])
 async def list_all_rooms(skip: int = 0, limit: int = 10):
@@ -75,3 +79,39 @@ async def delete_room(room_id: str):
     return {
         "detail": "Room deleted successfully"
     }
+
+
+
+@router.get("/filter", response_model=List[RoomOut])
+async def filter_rooms(
+    room_name: Optional[str] = None,
+    screen_type: Optional[str] = None,
+    audio_system: Optional[str] = None,
+    accessibility: Optional[bool] = None,
+    min_capacity: Optional[int] = None,
+    max_capacity: Optional[int] = None,
+    skip: int = 0,
+    limit: int = 10
+):
+    filter_query = {}
+    
+    if room_name:
+        filter_query["room_name"] = {"$regex": room_name, "$options": "i"}
+    if screen_type:
+        filter_query["screen_type"] = {"$regex": screen_type, "$options": "i"}
+    if audio_system:
+        filter_query["audio_system"] = {"$regex": audio_system, "$options": "i"}
+    if accessibility is not None:
+        filter_query["acessibility"] = accessibility
+    if min_capacity is not None or max_capacity is not None:
+        capacity_filter = {}
+        if min_capacity is not None:
+            capacity_filter["$gte"] = min_capacity
+        if max_capacity is not None:
+            capacity_filter["$lte"] = max_capacity
+        filter_query["capacity"] = capacity_filter
+    
+    rooms = await room_collection.find(filter_query).skip(skip).limit(limit).to_list(length=limit)
+    for r in rooms:
+        r["_id"] = str(r["_id"])
+    return rooms

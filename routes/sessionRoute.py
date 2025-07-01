@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from database import session_collection, room_collection, movie_collection
 from models import SessionCreate, SessionOut
-from typing import List
+from typing import List, Optional
 from bson import ObjectId
 
 router = APIRouter(prefix="/sessions")
@@ -36,6 +36,11 @@ async def create_session(session: SessionCreate):
     created_session = await session_collection.find_one({"_id": result.inserted_id})
     created_session["_id"] = str(created_session["_id"])
     return created_session
+
+@router.get("/count")
+async def get_sessions_count():
+    count = await session_collection.count_documents({})
+    return {"total_sessions": count}
 
 @router.get("/", response_model=List[SessionOut])
 async def list_all_sessions(skip: int = 0, limit: int = 10):
@@ -105,3 +110,61 @@ async def delete_session(session_id: str):
     )
     
     return {"detail": "Session deleted successfully"}
+
+
+
+@router.get("/filter", response_model=List[SessionOut])
+async def filter_sessions(
+    exibition_type: Optional[str] = None,
+    language_audio: Optional[str] = None,
+    language_subtitles: Optional[str] = None,
+    status_session: Optional[str] = None,
+    room_id: Optional[str] = None,
+    movie_id: Optional[str] = None,
+    date_from: Optional[str] = None,  # formato: YYYY-MM-DD
+    date_to: Optional[str] = None,    # formato: YYYY-MM-DD
+    skip: int = 0,
+    limit: int = 10
+):
+    filter_query = {}
+    
+    if exibition_type:
+        filter_query["exibition_type"] = {"$regex": exibition_type, "$options": "i"}
+    if language_audio:
+        filter_query["language_audio"] = {"$regex": language_audio, "$options": "i"}
+    if language_subtitles:
+        filter_query["language_subtitles"] = {"$regex": language_subtitles, "$options": "i"}
+    if status_session:
+        filter_query["status_session"] = {"$regex": status_session, "$options": "i"}
+    if room_id:
+        if ObjectId.is_valid(room_id):
+            filter_query["room_id"] = room_id
+        else:
+            raise HTTPException(status_code=400, detail="Invalid room ID")
+    if movie_id:
+        if ObjectId.is_valid(movie_id):
+            filter_query["movie_id"] = movie_id
+        else:
+            raise HTTPException(status_code=400, detail="Invalid movie ID")
+    
+    # Filtro por data
+    if date_from or date_to:
+        date_filter = {}
+        if date_from:
+            try:
+                from datetime import datetime
+                date_filter["$gte"] = datetime.fromisoformat(date_from + "T00:00:00")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date_from format. Use YYYY-MM-DD")
+        if date_to:
+            try:
+                from datetime import datetime
+                date_filter["$lte"] = datetime.fromisoformat(date_to + "T23:59:59")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date_to format. Use YYYY-MM-DD")
+        filter_query["date_time"] = date_filter
+    
+    sessions = await session_collection.find(filter_query).skip(skip).limit(limit).to_list(length=limit)
+    for s in sessions:
+        s["_id"] = str(s["_id"])
+    return sessions

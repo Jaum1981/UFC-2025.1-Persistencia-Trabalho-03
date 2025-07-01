@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Body
 from database import director_collection, movie_collection
 from models import DirectorCreate, DirectorOut
-from typing import List
+from typing import List, Optional
 from bson import ObjectId
 
 router = APIRouter(prefix="/directors")
@@ -34,6 +34,12 @@ async def create_director(director: DirectorCreate):
         )
         created["_id"] = str(created["_id"])
         return created
+    
+@router.get("/count")
+async def get_directors_count():
+    count = await director_collection.count_documents({})
+    return {"total_directors": count}
+
 
 @router.get("/", response_model=List[DirectorOut])
 async def list_director(skip: int = 0, limit: int = 10):
@@ -98,3 +104,26 @@ async def delete_director(director_id: str):
         {"$pull": {"director_ids": director_id}}
     )
     return {"detail": "Director deleted successfully"}
+
+
+@router.get("/filter", response_model=List[DirectorOut])
+async def filter_directors(
+    director_name: Optional[str] = None,
+    nationality: Optional[str] = None,
+    birth_date: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 10
+):
+    filter_query = {}
+    
+    if director_name:
+        filter_query["director_name"] = {"$regex": director_name, "$options": "i"}
+    if nationality:
+        filter_query["nationality"] = {"$regex": nationality, "$options": "i"}
+    if birth_date:
+        filter_query["birth_date"] = {"$regex": birth_date, "$options": "i"}
+    
+    directors = await director_collection.find(filter_query).skip(skip).limit(limit).to_list(length=limit)
+    for d in directors:
+        d["_id"] = str(d["_id"])
+    return directors

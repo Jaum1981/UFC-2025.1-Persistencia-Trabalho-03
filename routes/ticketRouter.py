@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from database import ticket_collection, payment_collection, session_collection
 from models import TicketCreate, TicketOut
-from typing import List
+from typing import List, Optional
 from bson import ObjectId
 
 router = APIRouter(prefix="/tickets")
@@ -42,6 +42,11 @@ async def create_ticket(ticket: TicketCreate):
         return created
     else:
         raise HTTPException(status_code=500, detail="Failed to create ticket")
+    
+@router.get("/count")
+async def get_tickets_count():
+    count = await ticket_collection.count_documents({})
+    return {"total_tickets": count}
 
 @router.get("/", response_model=List[TicketOut])
 async def list_all_tickets(skip: int = 0, limit: int = 10):
@@ -123,3 +128,33 @@ async def delete_ticket(ticket_id: str):
         )
     
     return {"detail": "Ticket and associated payment deleted successfully"}
+
+
+
+@router.get("/filter", response_model=List[TicketOut])
+async def filter_tickets(
+    chair_number: Optional[int] = None,
+    ticket_type: Optional[str] = None,
+    payment_status: Optional[str] = None,
+    session_id: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 10
+):
+    filter_query = {}
+    
+    if chair_number is not None:
+        filter_query["chair_number"] = chair_number
+    if ticket_type:
+        filter_query["ticket_type"] = {"$regex": ticket_type, "$options": "i"}
+    if payment_status:
+        filter_query["payment_status"] = {"$regex": payment_status, "$options": "i"}
+    if session_id:
+        if ObjectId.is_valid(session_id):
+            filter_query["session_id"] = session_id
+        else:
+            raise HTTPException(status_code=400, detail="Invalid session ID")
+    
+    tickets = await ticket_collection.find(filter_query).skip(skip).limit(limit).to_list(length=limit)
+    for t in tickets:
+        t["_id"] = str(t["_id"])
+    return tickets
