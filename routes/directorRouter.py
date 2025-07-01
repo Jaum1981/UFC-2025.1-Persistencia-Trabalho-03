@@ -24,6 +24,16 @@ async def create_director(director: DirectorCreate):
         )
         created["_id"] = str(created["_id"])
         return created
+    else:
+        director_dict = director.model_dump(exclude_unset=True)
+        result = await director_collection.insert_one(director_dict)
+        created = await director_collection.find_one(
+            {
+                '_id': result.inserted_id
+            }
+        )
+        created["_id"] = str(created["_id"])
+        return created
 
 @router.get("/", response_model=List[DirectorOut])
 async def list_director(skip: int = 0, limit: int = 10):
@@ -61,6 +71,20 @@ async def update_director(director_id: str, director: DirectorCreate = Body(...)
         updated = await director_collection.find_one({"_id": ObjectId(director_id)})
         updated["_id"] = str(updated["_id"])
         return updated
+    else:
+        if not ObjectId.is_valid(director_id):
+            raise HTTPException(status_code=400, detail="Invalid ID")
+        update_data = director.model_dump(exclude_unset=True)
+        result = await director_collection.update_one(
+            {"_id": ObjectId(director_id)},
+            {"$set": update_data}
+        )
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Director not found")
+        updated = await director_collection.find_one({"_id": ObjectId(director_id)})
+        updated["_id"] = str(updated["_id"])
+        return updated
+
 
 @router.delete("/{director_id}")
 async def delete_director(director_id: str):
