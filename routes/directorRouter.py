@@ -3,37 +3,59 @@ from database import director_collection, movie_collection
 from models import DirectorCreate, DirectorOut
 from typing import List, Optional
 from bson import ObjectId
+from logger import log_database_operation, log_business_rule_violation, logger
+import time
 
-router = APIRouter(prefix="/directors")
+router = APIRouter(prefix="/directors", tags=["directors"])
 
 @router.post("/", response_model=DirectorOut)
 async def create_director(director: DirectorCreate):
+    logger.info(f"Iniciando criação de diretor: {director.director_name}")
+    
     if director.movie_ids:
+        logger.info(f"Validando {len(director.movie_ids)} filmes para o diretor")
         for movie_id in director.movie_ids:
-            if not ObjectId.is_valid:
+            if not ObjectId.is_valid(movie_id):
+                log_business_rule_violation(
+                    rule="INVALID_MOVIE_ID",
+                    details="ID de filme inválido fornecido",
+                    data={"movie_id": movie_id, "director_name": director.director_name}
+                )
                 raise HTTPException(status_code=400, detail="Invalid ID")
+            
             movie = await movie_collection.find_one({"_id": ObjectId(movie_id)}) 
             if not movie:
+                log_business_rule_violation(
+                    rule="MOVIE_NOT_FOUND",
+                    details="Filme não encontrado durante criação de diretor",
+                    data={"movie_id": movie_id, "director_name": director.director_name}
+                )
                 raise HTTPException(status_code=404, detail="Movie not found")
-        director_dict = director.model_dump(exclude_unset=True)
-        result = await director_collection.insert_one(director_dict)
-        created = await director_collection.find_one(
-            {
-                '_id': result.inserted_id
-            }
-        )
-        created["_id"] = str(created["_id"])
-        return created
-    else:
-        director_dict = director.model_dump(exclude_unset=True)
-        result = await director_collection.insert_one(director_dict)
-        created = await director_collection.find_one(
-            {
-                '_id': result.inserted_id
-            }
-        )
-        created["_id"] = str(created["_id"])
-        return created
+        logger.info(f"Todos os {len(director.movie_ids)} filmes foram validados com sucesso")
+    
+    director_dict = director.model_dump(exclude_unset=True)
+    start_time = time.time()
+    result = await director_collection.insert_one(director_dict)
+    insert_time = time.time() - start_time
+    
+    start_time = time.time()
+    created = await director_collection.find_one({"_id": result.inserted_id})
+    find_time = time.time() - start_time
+    
+    created["_id"] = str(created["_id"])
+    
+    log_database_operation(
+        operation="insert",
+        collection="directors",
+        operation_data={"director_name": director.director_name, "nationality": director.nationality},
+        result={
+            "inserted_id": str(result.inserted_id),
+            "insert_time": f"{insert_time:.3f}s",
+            "find_time": f"{find_time:.3f}s"
+        }
+    )
+    logger.info(f"Diretor '{director.director_name}' criado com sucesso. ID: {result.inserted_id}")
+    return created
     
 @router.get("/count")
 async def get_directors_count():

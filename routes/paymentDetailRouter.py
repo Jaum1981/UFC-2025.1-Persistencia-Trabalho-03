@@ -3,33 +3,83 @@ from database import payment_collection, ticket_collection
 from models import PaymentDetailsCreate, PaymentDetailsOut
 from typing import List, Optional
 from bson import ObjectId
+from logger import log_database_operation, log_business_rule_violation, logger
+import time
 
-router = APIRouter(prefix="/payments")
+router = APIRouter(prefix="/payments", tags=["payments"])
 
 @router.post("/", response_model=PaymentDetailsOut)
 async def create_payment_detail(payment: PaymentDetailsCreate):
+    logger.info(f"Iniciando criação de pagamento. Método: {payment.payment_method}, Valor: {payment.amount}")
+    
     if payment.ticket_id:
+        logger.info(f"Validando ticket ID: {payment.ticket_id}")
         if not ObjectId.is_valid(payment.ticket_id):
+            log_business_rule_violation(
+                rule="INVALID_TICKET_ID",
+                details="ID de ticket inválido fornecido",
+                data={"ticket_id": payment.ticket_id, "payment_method": payment.payment_method}
+            )
             raise HTTPException(status_code=400, detail="Invalid ID")
+        
         ticket = await ticket_collection.find_one({"_id": ObjectId(payment.ticket_id)})
         if not ticket:
+            log_business_rule_violation(
+                rule="TICKET_NOT_FOUND",
+                details="Ticket não encontrado durante criação de pagamento",
+                data={"ticket_id": payment.ticket_id, "payment_method": payment.payment_method}
+            )
             raise HTTPException(status_code=404, detail="Ticket not found")
+        logger.info(f"Ticket validado com sucesso: {ticket.get('seat_number')}")
     
     payment_dict = payment.model_dump(exclude_unset=True)
+    start_time = time.time()
     result = await payment_collection.insert_one(payment_dict)
+    insert_time = time.time() - start_time
+    
     new_payment_id = result.inserted_id
     
+    log_database_operation(
+        operation="insert",
+        collection="payments",
+        operation_data={
+            "payment_method": payment.payment_method,
+            "amount": payment.amount,
+            "ticket_id": payment.ticket_id
+        },
+        result={
+            "inserted_id": str(new_payment_id),
+            "insert_time": f"{insert_time:.3f}s"
+        }
+    )
+    
+    # Atualizar ticket com pagamento
     if payment.ticket_id:
+        start_time = time.time()
         await ticket_collection.update_one(
             {"_id": ObjectId(payment.ticket_id)},
             {"$set": {"payment_details_id": str(new_payment_id)}}
         )
+        update_time = time.time() - start_time
+        
+        log_database_operation(
+            operation="update_one",
+            collection="tickets",
+            operation_data={"ticket_id": payment.ticket_id, "payment_id": str(new_payment_id)},
+            result={"update_time": f"{update_time:.3f}s"}
+        )
     
+    # Buscar pagamento criado
+    start_time = time.time()
     created = await payment_collection.find_one({"_id": new_payment_id})
+    find_time = time.time() - start_time
+    
     if created:
         created["_id"] = str(created["_id"])
+        logger.info(f"Pagamento criado com sucesso. ID: {new_payment_id}, Método: {payment.payment_method}, Valor: {payment.amount}")
         return created
     else:
+        logger.error(f"Falha ao recuperar pagamento criado. ID: {new_payment_id}")
         raise HTTPException(status_code=500, detail="Failed to create payment")
         
 @router.get("/count")

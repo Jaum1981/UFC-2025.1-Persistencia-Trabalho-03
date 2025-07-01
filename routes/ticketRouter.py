@@ -3,44 +3,122 @@ from database import ticket_collection, payment_collection, session_collection
 from models import TicketCreate, TicketOut
 from typing import List, Optional
 from bson import ObjectId
+from logger import log_database_operation, log_business_rule_violation, logger
+import time
 
-router = APIRouter(prefix="/tickets")
+router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 @router.post("/", response_model=TicketOut)
 async def create_ticket(ticket: TicketCreate):
+    logger.info(f"Iniciando criação de ticket. Assento: {ticket.seat_number}")
+    
+    # Validar sessão
     if ticket.session_id:
+        logger.info(f"Validando sessão ID: {ticket.session_id}")
         if not ObjectId.is_valid(ticket.session_id):
+            log_business_rule_violation(
+                rule="INVALID_SESSION_ID",
+                details="ID de sessão inválido fornecido",
+                data={"session_id": ticket.session_id, "seat_number": ticket.seat_number}
+            )
             raise HTTPException(status_code=400, detail="Invalid session ID")
+        
         session = await session_collection.find_one({"_id": ObjectId(ticket.session_id)})
         if not session:
+            log_business_rule_violation(
+                rule="SESSION_NOT_FOUND",
+                details="Sessão não encontrada durante criação de ticket",
+                data={"session_id": ticket.session_id, "seat_number": ticket.seat_number}
+            )
             raise HTTPException(status_code=404, detail="Session not found")
+        logger.info("Sessão validada com sucesso")
+    
+    # Validar pagamento
     if ticket.payment_details_id:
+        logger.info(f"Validando pagamento ID: {ticket.payment_details_id}")
         if not ObjectId.is_valid(ticket.payment_details_id):
+            log_business_rule_violation(
+                rule="INVALID_PAYMENT_ID",
+                details="ID de pagamento inválido fornecido",
+                data={"payment_id": ticket.payment_details_id, "seat_number": ticket.seat_number}
+            )
             raise HTTPException(status_code=400, detail="Invalid payment ID")
+        
         payment = await payment_collection.find_one({"_id": ObjectId(ticket.payment_details_id)})
         if not payment:
+            log_business_rule_violation(
+                rule="PAYMENT_NOT_FOUND",
+                details="Pagamento não encontrado durante criação de ticket",
+                data={"payment_id": ticket.payment_details_id, "seat_number": ticket.seat_number}
+            )
             raise HTTPException(status_code=404, detail="Payment not found")
+        logger.info("Pagamento validado com sucesso")
     
+    # Criar ticket
     ticket_dict = ticket.model_dump(exclude_unset=True)
+    start_time = time.time()
     result = await ticket_collection.insert_one(ticket_dict)
+    insert_time = time.time() - start_time
+    
     new_ticket_id = result.inserted_id
+    
+    log_database_operation(
+        operation="insert",
+        collection="tickets",
+        operation_data={
+            "seat_number": ticket.seat_number,
+            "session_id": ticket.session_id,
+            "payment_details_id": ticket.payment_details_id
+        },
+        result={
+            "inserted_id": str(new_ticket_id),
+            "insert_time": f"{insert_time:.3f}s"
+        }
+    )
 
+    # Atualizar sessão com ticket
     if ticket.session_id:
+        start_time = time.time()
         await session_collection.update_one(
             {"_id": ObjectId(ticket.session_id)},
             {"$push": {"ticket_ids": str(new_ticket_id)}}
         )
+        session_update_time = time.time() - start_time
+        
+        log_database_operation(
+            operation="update_one",
+            collection="sessions",
+            operation_data={"session_id": ticket.session_id, "ticket_id": str(new_ticket_id)},
+            result={"update_time": f"{session_update_time:.3f}s"}
+        )
+    
+    # Atualizar pagamento com ticket
     if ticket.payment_details_id:
+        start_time = time.time()
         await payment_collection.update_one(
             {"_id": ObjectId(ticket.payment_details_id)},
             {"$set": {"ticket_id": str(new_ticket_id)}}
         )
+        payment_update_time = time.time() - start_time
+        
+        log_database_operation(
+            operation="update_one",
+            collection="payments",
+            operation_data={"payment_id": ticket.payment_details_id, "ticket_id": str(new_ticket_id)},
+            result={"update_time": f"{payment_update_time:.3f}s"}
+        )
 
+    # Buscar ticket criado
+    start_time = time.time()
     created = await ticket_collection.find_one({"_id": new_ticket_id})
+    find_time = time.time() - start_time
+    
     if created:
         created["_id"] = str(created["_id"])
+        logger.info(f"Ticket criado com sucesso. ID: {new_ticket_id}, Assento: {ticket.seat_number}")
         return created
     else:
+        logger.error(f"Falha ao recuperar ticket criado. ID: {new_ticket_id}")
         raise HTTPException(status_code=500, detail="Failed to create ticket")
     
 @router.get("/count")

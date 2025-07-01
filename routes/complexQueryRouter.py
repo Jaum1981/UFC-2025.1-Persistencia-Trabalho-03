@@ -11,8 +11,10 @@ from typing import List, Optional, Dict, Any
 from bson import ObjectId
 from datetime import datetime
 from utils import serialize_mongo_result
+from logger import log_database_operation, log_business_rule_violation, logger, log_performance_metric
+import time
 
-router = APIRouter(prefix="/complex-queries")
+router = APIRouter(prefix="/complex-queries", tags=["complex-queries"])
 
 @router.get("/cinema-revenue-report")
 async def get_cinema_revenue_report(
@@ -24,7 +26,23 @@ async def get_cinema_revenue_report(
     Consulta complexa que retorna relatório de faturamento do cinema
     Envolve 5 coleções: Sessions, Movies, Directors, Rooms, Tickets, Payments
     """
+    filters = {"date_from": date_from, "date_to": date_to, "room_id": room_id}
+    active_filters = {k: v for k, v in filters.items() if v is not None}
+    
+    logger.info(f"Iniciando consulta complexa de relatório de faturamento com filtros: {active_filters}")
+    
     try:
+        # Validar room_id se fornecido
+        if room_id and not ObjectId.is_valid(room_id):
+            log_business_rule_violation(
+                rule="INVALID_ROOM_ID",
+                details="ID de sala inválido fornecido para relatório",
+                data={"room_id": room_id, "filters": active_filters}
+            )
+            raise HTTPException(status_code=400, detail="Invalid room ID")
+        
+        start_time = time.time()
+        
         # Pipeline de agregação complexa
         pipeline = [
             # Estágio 1: Filtrar sessões por data e sala (se especificado)

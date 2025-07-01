@@ -3,38 +3,110 @@ from database import session_collection, room_collection, movie_collection
 from models import SessionCreate, SessionOut
 from typing import List, Optional
 from bson import ObjectId
+from logger import log_database_operation, log_business_rule_violation, logger
+import time
 
-router = APIRouter(prefix="/sessions")
+router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 @router.post("/", response_model=SessionCreate)
 async def create_session(session: SessionCreate):
+    logger.info(f"Iniciando criação de sessão para filme ID: {session.movie_id}")
+    
+    # Validar filme
     if not ObjectId.is_valid(session.movie_id):
+        log_business_rule_violation(
+            rule="INVALID_MOVIE_ID",
+            details="ID de filme inválido fornecido",
+            data={"movie_id": session.movie_id}
+        )
         raise HTTPException(status_code=400, detail="Invalid movie ID")
+    
     movie = await movie_collection.find_one({"_id": ObjectId(session.movie_id)})
     if not movie:
+        log_business_rule_violation(
+            rule="MOVIE_NOT_FOUND",
+            details="Filme não encontrado durante criação de sessão",
+            data={"movie_id": session.movie_id}
+        )
         raise HTTPException(status_code=404, detail="Movie not found")
+    
+    # Validar sala
     if not ObjectId.is_valid(session.room_id):
+        log_business_rule_violation(
+            rule="INVALID_ROOM_ID",
+            details="ID de sala inválido fornecido",
+            data={"room_id": session.room_id, "movie_id": session.movie_id}
+        )
         raise HTTPException(status_code=400, detail="Invalid room ID")
+    
     room = await room_collection.find_one({"_id": ObjectId(session.room_id)})
     if not room:
+        log_business_rule_violation(
+            rule="ROOM_NOT_FOUND",
+            details="Sala não encontrada durante criação de sessão",
+            data={"room_id": session.room_id, "movie_id": session.movie_id}
+        )
         raise HTTPException(status_code=404, detail="Room not found")
     
+    logger.info(f"Filme '{movie.get('movie_title')}' e sala {room.get('room_number')} validados com sucesso")
+    
+    # Criar sessão
     session_dict = session.model_dump(exclude_unset=True)
+    start_time = time.time()
     result = await session_collection.insert_one(session_dict)
+    insert_time = time.time() - start_time
+    
     new_session_id = str(result.inserted_id)
+    
+    log_database_operation(
+        operation="insert",
+        collection="sessions",
+        operation_data={
+            "movie_id": session.movie_id,
+            "room_id": session.room_id,
+            "session_date": session.session_date,
+            "session_time": session.session_time
+        },
+        result={
+            "inserted_id": new_session_id,
+            "insert_time": f"{insert_time:.3f}s"
+        }
+    )
 
+    # Atualizar filme com a sessão
+    start_time = time.time()
     await movie_collection.update_one(
         {"_id": ObjectId(session.movie_id)},
         {"$push": {"session_ids": new_session_id}}
     )
+    movie_update_time = time.time() - start_time
 
+    # Atualizar sala com a sessão
+    start_time = time.time()
     await room_collection.update_one(
         {"_id": ObjectId(session.room_id)},
         {"$push": {"session_ids": new_session_id}}
     )
+    room_update_time = time.time() - start_time
+    
+    log_database_operation(
+        operation="update_associations",
+        collection="sessions",
+        operation_data={"session_id": new_session_id},
+        result={
+            "movie_update_time": f"{movie_update_time:.3f}s",
+            "room_update_time": f"{room_update_time:.3f}s"
+        }
+    )
 
+    # Buscar sessão criada
+    start_time = time.time()
     created_session = await session_collection.find_one({"_id": result.inserted_id})
+    find_time = time.time() - start_time
+    
     created_session["_id"] = str(created_session["_id"])
+    
+    logger.info(f"Sessão criada com sucesso. ID: {new_session_id}, Filme: {movie.get('movie_title')}, Sala: {room.get('room_number')}")
     return created_session
 
 @router.get("/count")
