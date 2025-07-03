@@ -64,8 +64,6 @@ async def create_session(session: SessionCreate):
         operation_data={
             "movie_id": session.movie_id,
             "room_id": session.room_id,
-            "session_date": session.session_date,
-            "session_time": session.session_time
         },
         result={
             "inserted_id": new_session_id,

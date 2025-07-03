@@ -10,7 +10,7 @@ router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 @router.post("/", response_model=TicketOut)
 async def create_ticket(ticket: TicketCreate):
-    logger.info(f"Iniciando criação de ticket. Assento: {ticket.seat_number}")
+    logger.info(f"Iniciando criação de ticket. Assento: {ticket.chair_number}")
     
     # Validar sessão
     if ticket.session_id:
@@ -19,7 +19,7 @@ async def create_ticket(ticket: TicketCreate):
             log_business_rule_violation(
                 rule="INVALID_SESSION_ID",
                 details="ID de sessão inválido fornecido",
-                data={"session_id": ticket.session_id, "seat_number": ticket.seat_number}
+                data={"session_id": ticket.session_id, "chair_number": ticket.chair_number}
             )
             raise HTTPException(status_code=400, detail="Invalid session ID")
         
@@ -28,7 +28,7 @@ async def create_ticket(ticket: TicketCreate):
             log_business_rule_violation(
                 rule="SESSION_NOT_FOUND",
                 details="Sessão não encontrada durante criação de ticket",
-                data={"session_id": ticket.session_id, "seat_number": ticket.seat_number}
+                data={"session_id": ticket.session_id, "chair_number": ticket.chair_number}
             )
             raise HTTPException(status_code=404, detail="Session not found")
         logger.info("Sessão validada com sucesso")
@@ -40,7 +40,7 @@ async def create_ticket(ticket: TicketCreate):
             log_business_rule_violation(
                 rule="INVALID_PAYMENT_ID",
                 details="ID de pagamento inválido fornecido",
-                data={"payment_id": ticket.payment_details_id, "seat_number": ticket.seat_number}
+                data={"payment_id": ticket.payment_details_id, "chair_number": ticket.chair_number}
             )
             raise HTTPException(status_code=400, detail="Invalid payment ID")
         
@@ -49,7 +49,7 @@ async def create_ticket(ticket: TicketCreate):
             log_business_rule_violation(
                 rule="PAYMENT_NOT_FOUND",
                 details="Pagamento não encontrado durante criação de ticket",
-                data={"payment_id": ticket.payment_details_id, "seat_number": ticket.seat_number}
+                data={"payment_id": ticket.payment_details_id, "chair_number": ticket.chair_number}
             )
             raise HTTPException(status_code=404, detail="Payment not found")
         logger.info("Pagamento validado com sucesso")
@@ -66,7 +66,7 @@ async def create_ticket(ticket: TicketCreate):
         operation="insert",
         collection="tickets",
         operation_data={
-            "seat_number": ticket.seat_number,
+            "chair_number": ticket.chair_number,
             "session_id": ticket.session_id,
             "payment_details_id": ticket.payment_details_id
         },
@@ -115,7 +115,7 @@ async def create_ticket(ticket: TicketCreate):
     
     if created:
         created["_id"] = str(created["_id"])
-        logger.info(f"Ticket criado com sucesso. ID: {new_ticket_id}, Assento: {ticket.seat_number}")
+        logger.info(f"Ticket criado com sucesso. ID: {new_ticket_id}, Assento: {ticket.chair_number}")
         return created
     else:
         logger.error(f"Falha ao recuperar ticket criado. ID: {new_ticket_id}")

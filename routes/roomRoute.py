@@ -10,7 +10,7 @@ router = APIRouter(prefix="/rooms", tags=["rooms"])
 
 @router.post("/", response_model=RoomOut)
 async def create_room(room: RoomCreate):
-    logger.info(f"Iniciando criação de sala: {room.room_number}")
+    logger.info(f"Iniciando criação de sala: {room.room_name}")
     
     if room.session_ids:
         logger.info(f"Validando {len(room.session_ids)} sessões para a sala")
@@ -19,7 +19,7 @@ async def create_room(room: RoomCreate):
                 log_business_rule_violation(
                     rule="INVALID_SESSION_ID",
                     details="ID de sessão inválido fornecido",
-                    data={"session_id": session_id, "room_number": room.room_number}
+                    data={"session_id": session_id, "room_name": room.room_name}
                 )
                 raise HTTPException(status_code=400, detail="Invalid session ID")
             
@@ -28,7 +28,7 @@ async def create_room(room: RoomCreate):
                 log_business_rule_violation(
                     rule="SESSION_NOT_FOUND",
                     details="Sessão não encontrada durante criação de sala",
-                    data={"session_id": session_id, "room_number": room.room_number}
+                    data={"session_id": session_id, "room_name": room.room_name}
                 )
                 raise HTTPException(status_code=404, detail="Session not found")
         logger.info(f"Todas as {len(room.session_ids)} sessões foram validadas com sucesso")
@@ -47,14 +47,14 @@ async def create_room(room: RoomCreate):
     log_database_operation(
         operation="insert",
         collection="rooms",
-        operation_data={"room_number": room.room_number, "capacity": room.capacity},
+        operation_data={"room_name": room.room_name, "capacity": room.capacity},
         result={
             "inserted_id": str(result.inserted_id),
             "insert_time": f"{insert_time:.3f}s",
             "find_time": f"{find_time:.3f}s"
         }
     )
-    logger.info(f"Sala {room.room_number} criada com sucesso. ID: {result.inserted_id}")
+    logger.info(f"Sala {room.room_name} criada com sucesso. ID: {result.inserted_id}")
     return created
     
 @router.get("/count")
@@ -123,9 +123,9 @@ async def find_room_by_id(room_id: str):
             operation="find_one",
             collection="rooms",
             operation_data={"room_id": room_id},
-            result={"found": True, "room_number": room.get("room_number"), "execution_time": f"{operation_time:.3f}s"}
+            result={"found": True, "room_name": room.get("room_name"), "execution_time": f"{operation_time:.3f}s"}
         )
-        logger.info(f"Sala encontrada: {room.get('room_number')}")
+        logger.info(f"Sala encontrada: {room.get('room_name')}")
         return room
     else:
         log_database_operation(
@@ -200,12 +200,12 @@ async def update_room(room_id: str, room: RoomCreate):
         operation_data={"room_id": room_id, "fields_updated": list(updated_data.keys())},
         result={
             "modified_count": result.modified_count,
-            "room_number": updated.get("room_number"),
+            "room_name": updated.get("room_name"),
             "execution_time": f"{operation_time:.3f}s",
             "find_time": f"{find_time:.3f}s"
         }
     )
-    logger.info(f"Sala {updated.get('room_number')} atualizada com sucesso")
+    logger.info(f"Sala {updated.get('room_name')} atualizada com sucesso")
     return updated
     
 @router.delete("/{room_id}")
@@ -234,8 +234,8 @@ async def delete_room(room_id: str):
         logger.warning(f"Tentativa de excluir sala inexistente. ID: {room_id}")
         raise HTTPException(status_code=404, detail="Room not found")
     
-    room_number = exists.get("room_number", "Número não disponível")
-    logger.info(f"Sala encontrada para exclusão: {room_number}")
+    room_name = exists.get("room_name", "Número não disponível")
+    logger.info(f"Sala encontrada para exclusão: {room_name}")
     
     start_time = time.time()
     await room_collection.delete_one({"_id": ObjectId(room_id)})
@@ -244,14 +244,14 @@ async def delete_room(room_id: str):
     log_database_operation(
         operation="delete_one",
         collection="rooms",
-        operation_data={"room_id": room_id, "room_number": room_number},
+        operation_data={"room_id": room_id, "room_name": room_name},
         result={
             "deleted": True,
             "find_time": f"{find_time:.3f}s",
             "delete_time": f"{delete_time:.3f}s"
         }
     )
-    logger.info(f"Sala {room_number} excluída com sucesso")
+    logger.info(f"Sala {room_name} excluída com sucesso")
     return {"detail": "Room deleted successfully"}
 
 

@@ -10,7 +10,7 @@ router = APIRouter(prefix="/payments", tags=["payments"])
 
 @router.post("/", response_model=PaymentDetailsOut)
 async def create_payment_detail(payment: PaymentDetailsCreate):
-    logger.info(f"Iniciando criação de pagamento. Método: {payment.payment_method}, Valor: {payment.amount}")
+    logger.info(f"Iniciando criação de pagamento. Método: {payment.payment_method}, Valor: {payment.final_price}")
     
     if payment.ticket_id:
         logger.info(f"Validando ticket ID: {payment.ticket_id}")
@@ -44,7 +44,7 @@ async def create_payment_detail(payment: PaymentDetailsCreate):
         collection="payments",
         operation_data={
             "payment_method": payment.payment_method,
-            "amount": payment.amount,
+            "final_price": payment.final_price,
             "ticket_id": payment.ticket_id
         },
         result={
@@ -76,7 +76,7 @@ async def create_payment_detail(payment: PaymentDetailsCreate):
     
     if created:
         created["_id"] = str(created["_id"])
-        logger.info(f"Pagamento criado com sucesso. ID: {new_payment_id}, Método: {payment.payment_method}, Valor: {payment.amount}")
+        logger.info(f"Pagamento criado com sucesso. ID: {new_payment_id}, Método: {payment.payment_method}, Valor: {payment.final_price}")
         return created
     else:
         logger.error(f"Falha ao recuperar pagamento criado. ID: {new_payment_id}")
