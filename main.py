@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from routes import directorRouter, movieRouter, roomRoute, sessionRoute, paymentDetailRouter, ticketRouter, complexQueryRouter, logsRouter
+from routes import directorRouter, movieRouter, roomRoute, sessionRoute, paymentDetailRouter, ticketRouter, complexQueryRouter
 from middleware import LoggingMiddleware
 from logger import logger
 
